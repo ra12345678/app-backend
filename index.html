@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Customers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    h1 { margin-bottom: 1rem; }
+    .box { max-width: 900px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f7f7f7; }
+    #err { color: #b00020; margin-top: 1rem; white-space: pre-wrap; }
+    #loading { opacity: 0.7; }
+    .actions { margin: 1rem 0; display: flex; gap: .5rem; }
+    button { padding: .5rem .75rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Customer List</h1>
+
+    <div class="actions">
+      <button id="btnReload">Reload</button>
+      <button id="btnHealth">Check API Health</button>
+      <span id="healthStatus" aria-live="polite"></span>
+    </div>
+
+    <div id="loading">Loading…</div>
+
+    <table id="tbl" style="display:none">
+      <thead><tr><th>ID</th><th>Name</th><th>Email</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <div id="err" style="display:none"></div>
+  </div>
+
+  <script>
+    // NOTE:
+    // - Using RELATIVE paths (no domain). CloudFront behavior must route `/api/*` to your VPC Origin.
+    // - Make sure the distribution has a behavior for `/api/*` pointing to the internal ALB.
+
+    async function fetchJSON(path, opts = {}) {
+      const r = await fetch(path, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        ...opts
+      });
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status} ${r.statusText}${text ? ` – ${text.slice(0,200)}` : ''}`);
+      }
+      return r.json();
+    }
+
+    async function loadCustomers() {
+      const loading = document.getElementById('loading');
+      const tbl = document.getElementById('tbl');
+      const tbody = document.getElementById('tbody');
+      const err = document.getElementById('err');
+
+      loading.style.display = '';
+      tbl.style.display = 'none';
+      err.style.display = 'none';
+      err.textContent = '';
+
+      try {
+        const { data } = await fetchJSON('/api/customers');
+        tbody.innerHTML = '';
+        (data || []).forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${row.id ?? ''}</td><td>${row.name ?? ''}</td><td>${row.email ?? ''}</td>`;
+          tbody.appendChild(tr);
+        });
+        loading.style.display = 'none';
+        tbl.style.display = '';
+      } catch (e) {
+        loading.style.display = 'none';
+        err.textContent = `Failed to load data from /api/customers\n${e.message}\n` +
+                          `Tips: ensure CloudFront behavior /api/* → VPC Origin, ALB target healthy, ` +
+                          `and backend allows Host ${location.hostname}.`;
+        err.style.display = '';
+      }
+    }
+
+    async function checkHealth() {
+      const el = document.getElementById('healthStatus');
+      el.textContent = 'Checking…';
+      try {
+        const j = await fetchJSON('/api/health');
+        el.textContent = `API OK (${new Date().toLocaleTimeString()}): ${JSON.stringify(j)}`;
+      } catch (e) {
+        el.textContent = `API health failed: ${e.message}`;
+      }
+    }
+
+    document.getElementById('btnReload').addEventListener('click', loadCustomers);
+    document.getElementById('btnHealth').addEventListener('click', checkHealth);
+
+    // Auto-load on first paint
+    loadCustomers();
+  </script>
+</body>
+</html>
+
